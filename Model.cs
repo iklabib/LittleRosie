@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+namespace LittleRosie;
 
 public class BuildResult 
 {
@@ -58,9 +59,12 @@ public class TestResult
 
     [JsonPropertyName("output")] 
     public string Output {get; set;}
+}
 
-    [JsonPropertyName("order")] 
-    public int Order {get; set;}
+public class Result 
+{
+    public BuildResult Build {get; set;}
+    public IEnumerable<TestResult> Tests {get; set;}
 }
 
 public enum StatusType 

@@ -1,24 +1,24 @@
 ﻿using System.Text.Json;
+using LittleRosie;
 
-if (args.Count() == 0) 
+var testMan = new TestManager();
+string lines = Console.ReadLine();
+var result = new Result 
 {
-    Console.WriteLine("[]");
-    return;
+    Build = testMan.Build(lines),
+};
+
+if (result.Build.Status != StatusType.OK) 
+{
+    Exit();
 }
 
-string command = args[0];
-var testMan = new TestManager();
-switch (command)
-{
-    case "build":
-        string? lines = Console.ReadLine();
-        var buildResult = testMan.Build(lines);
-        string serialized = JsonSerializer.Serialize(buildResult);
-        Console.WriteLine(serialized);
-    break;
+result.Tests = testMan.Run();
+Exit();
 
-    case "execute":
-        string testResult = testMan.Run();
-        Console.WriteLine(testResult);
-    break;
+void Exit() 
+{
+    string serialized = JsonSerializer.Serialize(result);
+    Console.WriteLine(serialized);
+    Environment.Exit(0);
 }

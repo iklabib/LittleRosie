@@ -8,13 +8,16 @@ using System.Reflection;
 using System.Text.Json;
 using System.Xml;
 
+namespace LittleRosie;
+
 public class TestManager 
 { 
     private string assemblyName = "main.dll";
 
-    public string Run() 
+    public IEnumerable<TestResult> Run() 
     {
         using var engine = TestEngineActivator.CreateInstance();
+        engine.InternalTraceLevel = InternalTraceLevel.Off;
         var assembly = Assembly.LoadFrom(assemblyName);
         var package = new TestPackage(assemblyName);
 
@@ -167,7 +170,8 @@ public class TestManager
         {
             var location = d.Location;
             var line = location.GetLineSpan().StartLinePosition;
-            var compileError = new CompileError {
+            var compileError = new CompileError 
+            {
                 Filename = location.SourceTree?.FilePath ?? "",
                 Message = d.GetMessage(),
                 Line = line.Line,
@@ -179,25 +183,18 @@ public class TestManager
         return compilationError.ToArray();
     }
 
-    private string parseTestResult(XmlNode node)
+    private IEnumerable<TestResult> parseTestResult(XmlNode node)
     {
+        var testResults = new List<TestResult>();
         var testCaseNodes = node.SelectNodes("//test-case");
         if (testCaseNodes == null)
         {
-            return "[]";
+            return testResults;
         }
 
-        var testResults = new List<TestResult>();
         foreach (XmlNode testCase in testCaseNodes)
         {
             string status = testCase.GetAttribute("result").ToUpper();
-
-            int order = 0;
-            var orderNode = testCase.SelectSingleNode("properties/property[@name='Order']");
-            if (orderNode != null)
-            {
-                order = int.Parse(orderNode.GetAttribute("value"));
-            }
 
             string message;
             if (status == "PASSED")
@@ -214,12 +211,11 @@ public class TestManager
                 Status = testCase.GetAttribute("result").ToUpper(),
                 Name = testCase.GetAttribute("name"),
                 Output = message,
-                Order = order,
             };
 
             testResults.Add(result);
         }
 
-        return JsonSerializer.Serialize(testResults);
+        return testResults;
     }
 }
