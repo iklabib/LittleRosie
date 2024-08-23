@@ -1,5 +1,5 @@
 {
-   "configProperties": {
-      "System.GC.HeapHardLimit": 67108864
-   }
+  "configProperties": {
+    "System.Globalization.Invariant": true
+  }
 }
