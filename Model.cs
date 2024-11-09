@@ -1,64 +1,62 @@
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 namespace LittleRosie;
 
 public class BuildResult 
 {
     [JsonPropertyName("status")]
-    public StatusType Status {get; set;}
+    public StatusType Status {get; set;} = StatusType.OK;
 
     [JsonPropertyName("message")]
-    public string Message {get; set;}
+    public string Message {get; set;} = "";
 
     [JsonPropertyName("compilation_errors")]
-    public CompileError[] CompilatioErrors {get; set;}
+    public CompileError[] CompilatioErrors {get; set;} = [];
 }
 
 public class CompileError
 {
     [JsonPropertyName("filename")]
-    public string Filename {get; set;}
+    public string Filename {get; set;} = "";
 
     [JsonPropertyName("message")]
-    public string Message {get; set;}
+    public string Message {get; set;} = "";
 
     [JsonPropertyName("line")]
-    public int Line {get; set;}
+    public int Line {get; set;} = 1;
 
     [JsonPropertyName("character")]
-    public int Character {get; set;}
+    public int Character {get; set;} = 1;
 }
 
 public class Submission 
 {
     [JsonPropertyName("src_test")] 
-    public string SourceCodeTest {get; set;}
+    public SourceFile[] SourceCodeTest {get; set;} = [];
 
     [JsonPropertyName("src")] 
-    public SourceFile[] SourceFiles {get; set;}
+    public SourceFile[] Sources {get; set;} = [];
 }
 
 public class SourceFile
 {
     [JsonPropertyName("filename")] 
-    public string Filename {get; set;}
-
-    [JsonPropertyName("path")] 
-    public string Path {get; set;}
+    public string Filename {get; set;} = "";
 
     [JsonPropertyName("src")] 
-    public string SourceCode {get; set;}
+    public string SourceCode {get; set;} = "";
 }
 
 public class TestResult
 {
-    [JsonPropertyName("status")] 
-    public string Status {get; set;}
+    [JsonPropertyName("passed")] 
+    public bool Passed {get; set;} = false;
 
     [JsonPropertyName("name")] 
-    public string Name {get; set;}
+    public string Name {get; set;} = "";
 
-    [JsonPropertyName("output")] 
-    public string Output {get; set;}
+    [JsonPropertyName("stack_trace")] 
+    public string StackTrace {get; set;} = "";
 }
 
 public class Result 

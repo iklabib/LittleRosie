@@ -1,30 +1,17 @@
+using System.Collections.Concurrent;
+using System.Reflection;
+using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
-using NUnit;
-using NUnit.Engine;
-using System.Reflection;
-using System.Text.Json;
-using System.Xml;
+using Xunit.Runners;
 
 namespace LittleRosie;
 
 public class TestManager 
 { 
     private string assemblyName = "main.dll";
-
-    public IEnumerable<TestResult> Run() 
-    {
-        using var engine = TestEngineActivator.CreateInstance();
-        engine.InternalTraceLevel = InternalTraceLevel.Off;
-        var assembly = Assembly.LoadFrom(assemblyName);
-        var package = new TestPackage(assemblyName);
-
-        using var runner = engine.GetRunner(package);
-        XmlNode testResult = runner.Run(null, TestFilter.Empty);
-        return parseTestResult(testResult);
-    }
 
     public BuildResult Build(string lines) 
     {
@@ -61,10 +48,11 @@ public class TestManager
             global using global::System.Collections.Generic;
             """))
             .WithFilePath("GlobalUsings.cs");
+            SourceFile[] sources = [.. submissions.SourceCodeTest, .. submissions.Sources];
 
-            var syntaxTrees = submissions.SourceFiles.Where(el => !string.IsNullOrEmpty(el.SourceCode))
+            var syntaxTrees = sources.Where(el => !string.IsNullOrEmpty(el.SourceCode))
                             .Select(el => { 
-                                // remove main method for non-test source codes
+                                // remove main method from source codes
                                 var source = SourceText.From(el.SourceCode);
                                 var tree = CSharpSyntaxTree.ParseText(source).WithFilePath(el.Filename);
                                 var root = tree.GetRoot();
@@ -102,7 +90,7 @@ public class TestManager
                 };
             }
 
-            var compilationOptions = new CSharpCompilationOptions(OutputKind.ConsoleApplication)
+            var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
                                                             .WithOptimizationLevel(OptimizationLevel.Release)
                                                             .WithPlatform(Platform.X64)
                                                             .WithWarningLevel(1);
@@ -112,9 +100,8 @@ public class TestManager
                                                .AddReferences(references)
                                                .AddSyntaxTrees(syntaxTrees);
 
-            // FIXME: suppression does not work for whatever reason, so here is a workaround
-            var errors = compilation.GetDiagnostics().Where(el => el.Id != "CS5001" && el.Severity == DiagnosticSeverity.Error);
-            if (errors.Count() > 0)
+            var errors = compilation.GetDiagnostics().Where(el => el.Severity == DiagnosticSeverity.Error);
+            if (errors.Any())
             {
                 return new BuildResult 
                 { 
@@ -123,35 +110,17 @@ public class TestManager
                 };
             }
 
-            // there should be only one test file
-            if (string.IsNullOrEmpty(submissions.SourceCodeTest)) 
-            {
-                return new BuildResult 
-                { 
-                    Status = StatusType.ERROR, 
-                    Message = "no test provided",
-                };
-            }
-
-            var testTree = CSharpSyntaxTree.ParseText(SourceText.From(submissions.SourceCodeTest))
-                                           .WithFilePath(Path.GetRandomFileName() + ".cs");
-            var completeTree = syntaxTrees.Append(testTree);
-
-            compilation = compilation.RemoveAllSyntaxTrees().AddSyntaxTrees(completeTree);
-
             var emitResult = compilation.Emit(assemblyName);
-            if (emitResult.Success && errors.Count() == 0)
+            if (emitResult.Success)
             {
                 return new BuildResult { Status = StatusType.OK };
             }
-            else
-            {
-                return new BuildResult 
-                { 
-                    Status = StatusType.ERROR, 
-                    CompilatioErrors = Diagnostics(emitResult.Diagnostics.Where(el => el.Severity == DiagnosticSeverity.Error)),
-                };
-            }
+
+            return new BuildResult 
+            { 
+                Status = StatusType.ERROR, 
+                CompilatioErrors = Diagnostics(emitResult.Diagnostics.Where(el => el.Severity == DiagnosticSeverity.Error)),
+            };
         } 
         catch(Exception e) 
         {
@@ -174,8 +143,8 @@ public class TestManager
             {
                 Filename = location.SourceTree?.FilePath ?? "",
                 Message = d.GetMessage(),
-                Line = line.Line,
-                Character = line.Character,
+                Line = line.Line + 1,
+                Character = line.Character + 1,
             };
             compilationError.Add(compileError);
         }
@@ -183,39 +152,51 @@ public class TestManager
         return compilationError.ToArray();
     }
 
-    private IEnumerable<TestResult> parseTestResult(XmlNode node)
+    public IEnumerable<TestResult> Tests(string assemblyPath)
     {
-        var testResults = new List<TestResult>();
-        var testCaseNodes = node.SelectNodes("//test-case");
-        if (testCaseNodes == null)
+        // a bit hacky?
+        AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
         {
-            return testResults;
-        }
-
-        foreach (XmlNode testCase in testCaseNodes)
-        {
-            string status = testCase.GetAttribute("result").ToUpper();
-
-            string message;
-            if (status == "PASSED")
+            AssemblyName assemblyName = new AssemblyName(args.Name);
+            string assemblyPath = Path.Combine(AppContext.BaseDirectory, assemblyName.Name + ".dll");
+            if (File.Exists(assemblyPath))
             {
-                message = testCase?.SelectSingleNode("reason/message")?.InnerText ?? "";
-            }
-            else
-            {
-                message = testCase?.SelectSingleNode("reason/failure")?.InnerText ?? "";
+                return Assembly.LoadFrom(assemblyPath);
             }
 
-            var result = new TestResult
-            {
-                Status = testCase.GetAttribute("result").ToUpper(),
-                Name = testCase.GetAttribute("name"),
-                Output = message,
-            };
+            return Assembly.Load(args.Name);
+        };
 
-            testResults.Add(result);
-        }
+        var stack = new ConcurrentStack<TestResult>();
 
-        return testResults;
+        using var completionEvent = new ManualResetEventSlim(false);
+        using var runner = AssemblyRunner.WithoutAppDomain(assemblyPath);
+        runner.OnTestFailed = info =>
+        {
+            stack.Push(new TestResult {
+                Passed = false,
+                Name = info.TestDisplayName,
+                StackTrace = info.ExceptionStackTrace,
+            });
+        };
+
+        runner.OnTestPassed = info =>
+        {
+            stack.Push(new TestResult {
+                Passed = true,
+                Name = info.TestDisplayName,
+            });
+        };
+
+        runner.OnExecutionComplete = _ =>  
+        {
+            completionEvent.Set();
+        };
+
+        runner.Start();
+
+        completionEvent.Wait();
+
+        return stack.ToArray();
     }
 }

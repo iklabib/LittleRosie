@@ -1,24 +1,31 @@
-﻿using System.Text.Json;
-using LittleRosie;
+﻿using LittleRosie;
+using System.Reflection;
+using System.Runtime.Loader;
+using System.Text.Json;
 
 var testMan = new TestManager();
-string lines = Console.ReadLine();
-var result = new Result 
+if (args.Length == 0)
 {
-    Build = testMan.Build(lines),
-};
-
-if (result.Build.Status != StatusType.OK) 
-{
-    Exit();
+    return;
 }
 
-result.Tests = testMan.Run();
-Exit();
-
-void Exit() 
+switch (args[0])
 {
-    string serialized = JsonSerializer.Serialize(result);
-    Console.WriteLine(serialized);
-    Environment.Exit(0);
+    case "build":
+    {
+        string input = Console.ReadLine();
+        var tests = testMan.Build(input);
+        string output = JsonSerializer.Serialize(tests);
+        // Console.Clear();
+        Console.WriteLine(output);
+        break;
+    }
+
+    case "run":
+    {
+        var tests = testMan.Tests("main.dll");
+        var res = JsonSerializer.Serialize(tests);
+        Console.WriteLine(res);
+        break;
+    }
 }
